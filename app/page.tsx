@@ -96,7 +96,7 @@ export default function Home() {
       type: 'ocelot',
       copySource: 'none'
     }]);
-  }, []);
+  }, [getUniqueName]);
 
   const handleLandDrop = () => {
     const newToken: Token = {
@@ -226,13 +226,13 @@ export default function Home() {
             </p>
             <ul className="list-disc pl-6 space-y-3 text-lg">
               <li>
-                <span className="font-semibold">Springheart Nantuko</span> is an Aura that can be bestowed on a creature. When a land enters the battlefield under your control, you may pay one green mana and one generic mana if this permanent is attached to a creature you control. If you do, create a token that's a copy of that creature. If you didn't create a token this way, create a 1/1 green Insect creature token.
+                <span className="font-semibold">Springheart Nantuko</span> is an Aura that can be bestowed on a creature. When a land enters the battlefield under your control, you may pay one green mana and one generic mana if this permanent is attached to a creature you control. If you do, create a token that&apos;s a copy of that creature. If you didn&apos;t create a token this way, create a 1/1 green Insect creature token.
               </li>
               <li>
-                <span className="font-semibold">Ocelot Pride</span> has a triggered ability: "At the beginning of your end step, if you gained life this turn, create a 1/1 white Cat creature token. Then if you have the city's blessing, for each token you control that entered the battlefield under your control this turn, create a token that's a copy of it."
+                <span className="font-semibold">Ocelot Pride</span> has a triggered ability: &quot;At the beginning of your end step, if you gained life this turn, create a 1/1 white Cat creature token. Then if you have the city&apos;s blessing, for each token you control that entered the battlefield under your control this turn, create a token that&apos;s a copy of it.&quot;
               </li>
               <li>
-                When you make a land drop with Springheart Nantuko, you create a token that's a copy of the enchanted creature (Ocelot Pride). 
+                When you make a land drop with Springheart Nantuko, you create a token that&apos;s a copy of the enchanted creature (Ocelot Pride). 
               </li>
               <li>
                 At the beginning of your end step, each Ocelot Pride that was on the battlefield before end step will trigger.

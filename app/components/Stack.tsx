@@ -1,6 +1,3 @@
-import { useState, useEffect } from 'react';
-import Image from 'next/image';
-
 interface StackItem {
   id: string;
   type: 'trigger';
