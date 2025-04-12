@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import Stack from './components/Stack';
 import { v4 as uuidv4 } from 'uuid';
@@ -40,6 +40,7 @@ interface Token {
   copiedFrom?: string;
   createdBy?: string;
   copySource: 'springheart' | 'ocelot' | 'none';
+  createdTurn: number;
 }
 
 interface LogEntry {
@@ -56,6 +57,8 @@ export default function Home() {
   const [nextCopyNumber, setNextCopyNumber] = useState(1);
   const [usedNames, setUsedNames] = useState<Set<string>>(new Set(['Ocelot Pride']));
   const [log, setLog] = useState<LogEntry[]>([]);
+  const [focusedTokenId, setFocusedTokenId] = useState<string | null>(null);
+  const isProcessingRef = useRef(false);
 
   const addLogEntry = (message: string) => {
     setLog(prev => [...prev, {
@@ -94,9 +97,10 @@ export default function Home() {
       source: 'battlefield', 
       copyNumber: 0, 
       type: 'ocelot',
-      copySource: 'none'
+      copySource: 'none',
+      createdTurn: 1
     }]);
-  }, [getUniqueName]);
+  }, []);
 
   const handleLandDrop = () => {
     const newToken: Token = {
@@ -108,7 +112,8 @@ export default function Home() {
       type: 'ocelot',
       copiedFrom: tokens[0].id,
       createdBy: tokens[0].id,
-      copySource: 'springheart'
+      copySource: 'springheart',
+      createdTurn: turns
     };
     setTokens(prev => [...prev, newToken]);
     setNextCopyNumber(prev => prev + 1);
@@ -117,9 +122,8 @@ export default function Home() {
   const handleEndStep = () => {
     setPhase('end');
     addLogEntry(`=== Turn ${turns} End Step ===`);
-    // Add triggers to the stack for each Ocelot Pride that was on the battlefield before end step
-    const ocelotsBeforeEndStep = tokens.filter(token => token.type === 'ocelot');
     
+    const ocelotsBeforeEndStep = tokens.filter(token => token.type === 'ocelot');
     const newTriggers: StackItem[] = ocelotsBeforeEndStep.map((token) => {
       addLogEntry(`${token.name} triggers: Create a 1/1 white Cat creature token and copy new tokens`);
       return {
@@ -131,68 +135,92 @@ export default function Home() {
       };
     });
     
-    setStack([...newTriggers, ...stack]);
+    setStack(prevStack => [...newTriggers, ...prevStack]);
+    
+    if (turns > 2) {
+      setTimeout(processStack, 1000);
+    }
   };
 
   const handleResolve = (id: string) => {
-    setStack(stack.map(item => 
-      item.id === id ? { ...item, resolving: true } : item
-    ));
-    setTimeout(() => {
-      const trigger = stack.find(item => item.id === id);
-      if (trigger) {
-        const sourceOcelot = tokens.find(t => t.name === trigger.source);
-        
-        // Create a cat token
-        const catToken: Token = {
-          id: uuidv4(),
-          name: getUniqueName(),
-          isNew: true,
-          source: 'trigger' as const,
-          copyNumber: 0,
-          type: 'cat',
-          createdBy: sourceOcelot?.id,
-          copySource: 'none'
-        };
-        
-        addLogEntry(`${sourceOcelot?.name || 'Unknown'} creates a Cat token named ${catToken.name}`);
-        
-        // Get all tokens that entered this turn, including the cat token we just created
-        const tokensToCopy = [...tokens, catToken].filter(t => t.isNew);
-        const copies: Token[] = tokensToCopy.map(token => ({
-          id: uuidv4(),
-          name: getUniqueName(),
-          isNew: true,
-          source: 'trigger' as const,
-          copyNumber: nextCopyNumber + tokensToCopy.indexOf(token),
-          type: token.type,
-          copiedFrom: token.id,
-          createdBy: sourceOcelot?.id,
-          copySource: 'ocelot' as const
-        }));
-        
-        copies.forEach(copy => {
-          const originalToken = tokensToCopy[copies.indexOf(copy)];
-          addLogEntry(`${sourceOcelot?.name || 'Unknown'} creates a copy of ${originalToken.name} named ${copy.name}`);
-        });
-        
-        setTokens(prev => {
-          const newTokens = [...prev, catToken, ...copies];
-          if (stack.length === 1) {
-            const ocelotCount = newTokens.filter(t => t.type === 'ocelot').length;
-            const catCount = newTokens.filter(t => t.type === 'cat').length;
-            addLogEntry(`=== End of Turn ${turns} ===`);
-            addLogEntry(`Total Ocelot Prides: ${ocelotCount}`);
-            addLogEntry(`Total Cat Tokens: ${catCount}`);
-            setTurns(prev => prev + 1);
-            setPhase('main');
-            return newTokens.map(token => ({ ...token, isNew: false }));
-          }
-          return newTokens;
-        });
+    if (isProcessingRef.current) return;
+    isProcessingRef.current = true;
+
+    const trigger = stack.find(item => item.id === id);
+    if (!trigger) {
+      isProcessingRef.current = false;
+      return;
+    }
+
+    const sourceOcelot = tokens.find(t => t.name === trigger.source);
+    
+    // First, create a cat token
+    const catToken: Token = {
+      id: uuidv4(),
+      name: getUniqueName(),
+      isNew: true,
+      source: 'trigger' as const,
+      copyNumber: 0,
+      type: 'cat',
+      createdBy: sourceOcelot?.id,
+      copySource: 'none',
+      createdTurn: turns
+    };
+    
+    addLogEntry(`${sourceOcelot?.name || 'Unknown'} creates a Cat token named ${catToken.name}`);
+    
+    // Get all tokens that entered this turn before the trigger resolves (excluding the original Ocelot Pride)
+    // and include the cat token we just created
+    const tokensToCopy = [...tokens.filter(t => t.createdTurn === turns && t.source !== 'battlefield'), catToken];
+    const copies: Token[] = tokensToCopy.map(token => ({
+      id: uuidv4(),
+      name: getUniqueName(),
+      isNew: true,
+      source: 'trigger' as const,
+      copyNumber: nextCopyNumber + tokensToCopy.indexOf(token),
+      type: token.type,
+      copiedFrom: token.id,
+      createdBy: sourceOcelot?.id,
+      copySource: 'ocelot' as const,
+      createdTurn: turns
+    }));
+    
+    copies.forEach(copy => {
+      const originalToken = tokensToCopy[copies.indexOf(copy)];
+      addLogEntry(`${sourceOcelot?.name || 'Unknown'} creates a copy of ${originalToken.name} named ${copy.name}`);
+    });
+
+    setStack(prevStack => {
+      const newStack = prevStack.filter(item => item.id !== id);
+      if (newStack.length === 0) {
+        const ocelotCount = [...tokens, catToken, ...copies].filter(t => t.type === 'ocelot').length;
+        const catCount = [...tokens, catToken, ...copies].filter(t => t.type === 'cat').length;
+        addLogEntry(`=== End of Turn ${turns} ===`);
+        addLogEntry(`Total Ocelot Prides: ${ocelotCount}`);
+        addLogEntry(`Total Cat Tokens: ${catCount}`);
+        setTurns(prev => prev + 1);
+        setPhase('main');
       }
-      setStack(stack.filter(item => item.id !== id));
-    }, 1000);
+      return newStack;
+    });
+
+    setTokens(prev => {
+      const newTokens = [...prev, catToken, ...copies];
+      return newTokens;
+    });
+
+    isProcessingRef.current = false;
+  };
+
+  const processStack = () => {
+    if (isProcessingRef.current || stack.length === 0) return;
+    
+    const nextTrigger = stack[0];
+    handleResolve(nextTrigger.id);
+    
+    if (turns > 2 && stack.length > 1) {
+      setTimeout(processStack, 1500);
+    }
   };
 
   const handleReset = () => {
@@ -208,7 +236,8 @@ export default function Home() {
       source: 'battlefield', 
       copyNumber: 0, 
       type: 'ocelot',
-      copySource: 'none'
+      copySource: 'none',
+      createdTurn: 1
     }]);
     addLogEntry('=== Game Reset ===');
   };
@@ -321,8 +350,16 @@ export default function Home() {
               const creatorToken = token.createdBy ? tokens.find(t => t.id === token.createdBy) : null;
               
               return (
-                <div key={token.id} className="flex flex-col items-center">
-                  <div className="relative">
+                <div 
+                  key={token.id} 
+                  id={token.id} 
+                  className={`flex flex-col items-center transition-all duration-300 ${
+                    focusedTokenId === token.id ? 'scale-110' : ''
+                  }`}
+                >
+                  <div className={`relative ${
+                    focusedTokenId === token.id ? 'ring-4 ring-blue-500 rounded-lg' : ''
+                  }`}>
                     {index === 0 && (
                       <Image
                         src="/springheart.jpg"
@@ -362,13 +399,25 @@ export default function Home() {
                           {token.source === 'land' ? (
                             <p>Created by: Springheart Landfall</p>
                           ) : token.copySource !== 'ocelot' && (
-                            <p>Created by: {creatorToken?.name || 'Unknown'}</p>
+                            <p>Created by: <a href={`#${token.createdBy}`} onClick={(e) => {
+                              e.preventDefault();
+                              setFocusedTokenId(token.createdBy!);
+                              document.getElementById(token.createdBy!)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }} className="text-blue-600 hover:underline">{creatorToken?.name || 'Unknown'}</a></p>
                           )}
                           {token.copiedFrom && (
-                            <p>Copy of: {originalToken?.name || 'Unknown'}</p>
+                            <p>Copy of: <a href={`#${token.copiedFrom}`} onClick={(e) => {
+                              e.preventDefault();
+                              setFocusedTokenId(token.copiedFrom!);
+                              document.getElementById(token.copiedFrom!)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }} className="text-blue-600 hover:underline">{originalToken?.name || 'Unknown'}</a></p>
                           )}
                           {token.copySource === 'ocelot' && (
-                            <p className="text-purple-600">Created by {creatorToken?.name || 'Unknown'} Trigger</p>
+                            <p className="text-purple-600">Created by <a href={`#${token.createdBy}`} onClick={(e) => {
+                              e.preventDefault();
+                              setFocusedTokenId(token.createdBy!);
+                              document.getElementById(token.createdBy!)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }} className="text-purple-600 hover:underline">{creatorToken?.name || 'Unknown'}</a> Trigger</p>
                           )}
                         </>
                       )}
